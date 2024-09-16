@@ -25,9 +25,9 @@ export class QuicksightExampleStack extends cdk.Stack {
     });
 
     const quicksightservicerole = new Role(
-      this, "aws-quicksight-service-role-v0",
+      this, "aws-quicksight-example-role",
       {
-        roleName: "aws-quicksight-service-role-v0",
+        roleName: "aws-quicksight-example-role",
         assumedBy: new ServicePrincipal('quicksight.amazonaws.com'),
         description: 'quicksight role',
       }
@@ -43,10 +43,11 @@ export class QuicksightExampleStack extends cdk.Stack {
 
     const qs_import_mode = "SPICE";
 
-    this.deployManifests(bucket);
+    const deployment = this.deployManifests(bucket);
     this.createManagedPolicyForQuicksight('quickSightPolicy', 'quickSightS3Policy', bucketName, [quicksightservicerole.roleName]);
     const qs_s3_datasource_name = "s3datasourceexample";
     const qs_s3_datasource = this.createDataSourceS3Type('S3DataSource', qs_s3_datasource_name, bucketName, QuicksightExampleStack.MANIFEST_KEY);
+    qs_s3_datasource.node.addDependency(deployment);
     const physicalColumns = readFileSync('physical-columns.json', 'utf-8');
     const physicalColumnsJson = JSON.parse(physicalColumns);
 
@@ -55,7 +56,7 @@ export class QuicksightExampleStack extends cdk.Stack {
     const qs_dataset_created = this.createDataset('ExtractTelemetryFinal', "s3-extract-telemetry", qs_import_mode, {[qs_s3_datasource_name]: qs_s3_dataset_physical_tables_properties});
   }
 
-  public deployManifests(bucket: Bucket) {
+  public deployManifests(bucket: Bucket): BucketDeployment {
     const manifest = QuicksightExampleStack.createS3Manifest(
       bucket.bucketName
     );
@@ -65,7 +66,7 @@ export class QuicksightExampleStack extends cdk.Stack {
       manifest
     );
     // deploy them
-    new BucketDeployment(this, 'Bucketdeployment', {
+    return new BucketDeployment(this, 'Bucketdeployment', {
       sources: [sourceInternal],
       destinationBucket: bucket,
     });
@@ -76,13 +77,13 @@ export class QuicksightExampleStack extends cdk.Stack {
     return {
       fileLocations: [
         {
-          URIPrefixes: [`s3://${s3BucketName}`],
+          URIPrefixes: [`s3://${s3BucketName}`]
         },
       ],
       globalUploadSettings: {
         format: 'CSV',
         delimiter: ',',
-      },
+      }
     };
   }
 
