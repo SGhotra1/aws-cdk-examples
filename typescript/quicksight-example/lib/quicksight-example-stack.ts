@@ -3,8 +3,8 @@ import {Construct} from 'constructs';
 import {Bucket} from "aws-cdk-lib/aws-s3";
 import {BucketDeployment, Source} from "aws-cdk-lib/aws-s3-deployment";
 import {aws_s3} from "aws-cdk-lib";
-import {CfnAnalysis, CfnDataSet, CfnDataSource} from "aws-cdk-lib/aws-quicksight";
-import {CfnManagedPolicy, ManagedPolicy, Role, ServicePrincipal} from "aws-cdk-lib/aws-iam";
+import {CfnAnalysis, CfnDataSet, CfnDataSource, CfnTemplate} from "aws-cdk-lib/aws-quicksight";
+import {CfnManagedPolicy} from "aws-cdk-lib/aws-iam";
 import {readFileSync} from "node:fs";
 
 export class QuicksightExampleStack extends cdk.Stack {
@@ -14,8 +14,8 @@ export class QuicksightExampleStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: cdk.StackProps) {
     super(scope, id, props);
 
-
     const bucketName = 'example-bucket';
+    const accountQuicksight = "arn:aws:quicksight:<region>:<accountid>:user/<namespace>/<username>"; // replace with your own values here
 
     // Set up a bucket
     const bucket = new aws_s3.Bucket(this, bucketName, {
@@ -24,39 +24,54 @@ export class QuicksightExampleStack extends cdk.Stack {
       blockPublicAccess: aws_s3.BlockPublicAccess.BLOCK_ALL
     });
 
-    const quicksightservicerole = new Role(
-      this, "aws-quicksight-example-role",
+    const qs_data_source_permissions : CfnTemplate.ResourcePermissionProperty[] = [
       {
-        roleName: "aws-quicksight-example-role",
-        assumedBy: new ServicePrincipal('quicksight.amazonaws.com'),
-        description: 'quicksight role',
+        principal: accountQuicksight,
+        actions: [
+          "quicksight:DescribeDataSource",
+          "quicksight:DescribeDataSourcePermissions",
+          "quicksight:PassDataSource",
+          "quicksight:UpdateDataSource"
+        ],
       }
-    );
+    ];
 
-    const S3ReadOnly = ManagedPolicy.fromManagedPolicyArn(
-      this,
-      "s3quicksightPolicy",
-      "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"
-    );
+    const qs_dataset_permissions : CfnTemplate.ResourcePermissionProperty[] = [
+      {
+        principal: accountQuicksight,
+        actions: [
+          "quicksight:DescribeDataSet",
+          "quicksight:DescribeDataSetPermissions",
+          "quicksight:PassDataSet",
+          "quicksight:DescribeIngestion",
+          "quicksight:ListIngestions",
+          "quicksight:UpdateDataSet",
+          "quicksight:DeleteDataSet",
+          "quicksight:CreateIngestion",
+          "quicksight:CancelIngestion",
+          "quicksight:UpdateDataSetPermissions"
+        ]
+      }
+    ];
 
-    quicksightservicerole.addManagedPolicy(S3ReadOnly);
+    const deployment = this.deployToBucket(bucket);
+    const quicksightServiceRole = "aws-quicksight-service-role-v0"; // initial quicksight role
+    const managedpolicy = this.createManagedPolicyForQuicksight('quicksightexamplepolicy', 'quicksightexamplepolicy', bucket.bucketName, [quicksightServiceRole]);
 
-    const qs_import_mode = "SPICE";
-
-    const deployment = this.deployManifests(bucket);
-    this.createManagedPolicyForQuicksight('quickSightPolicy', 'quickSightS3Policy', bucketName, [quicksightservicerole.roleName]);
     const qs_s3_datasource_name = "s3datasourceexample";
-    const qs_s3_datasource = this.createDataSourceS3Type('S3DataSource', qs_s3_datasource_name, bucketName, QuicksightExampleStack.MANIFEST_KEY);
+    const qs_s3_datasource = this.createDataSourceS3Type('S3DataSource', qs_s3_datasource_name, bucket.bucketName, QuicksightExampleStack.MANIFEST_KEY, qs_data_source_permissions);
     qs_s3_datasource.node.addDependency(deployment);
+    qs_s3_datasource.node.addDependency(managedpolicy);
     const physicalColumns = readFileSync('physical-columns.json', 'utf-8');
     const physicalColumnsJson = JSON.parse(physicalColumns);
 
     const physical_table_columns = physicalColumnsJson["Internal"];
     const qs_s3_dataset_physical_tables_properties : CfnDataSet.PhysicalTableProperty = this.createS3PhysicalTableProperties(qs_s3_datasource.attrArn, physical_table_columns);
-    const qs_dataset_created = this.createDataset('ExtractTelemetryFinal', "s3-extract-telemetry", qs_import_mode, {[qs_s3_datasource_name]: qs_s3_dataset_physical_tables_properties});
+    const qs_dataset_created = this.createDataset('quicksightexampleDataset', 'quicksightexampleDataset', 'SPICE', {[qs_s3_datasource_name]: qs_s3_dataset_physical_tables_properties}, qs_dataset_permissions);
+    //this.createAnalysis('analysisObd2', "analysisExtractedObd2", templateJsonArns['obd2TemplateArn'], qs_dataset_created.attrArn, datasetPlaceholder, analysisPermissions);
   }
 
-  public deployManifests(bucket: Bucket): BucketDeployment {
+  public deployToBucket(bucket: Bucket): BucketDeployment {
     const manifest = QuicksightExampleStack.createS3Manifest(
       bucket.bucketName
     );
@@ -67,7 +82,7 @@ export class QuicksightExampleStack extends cdk.Stack {
     );
     // deploy them
     return new BucketDeployment(this, 'Bucketdeployment', {
-      sources: [sourceInternal],
+      sources: [sourceInternal, Source.asset('./data')],
       destinationBucket: bucket,
     });
   }
@@ -102,18 +117,9 @@ export class QuicksightExampleStack extends cdk.Stack {
             },
             {
               "Effect": "Allow",
-              "Action": ["s3:ListBucket"],
+              "Action": ["s3:*"],
               "Resource": [
-                `arn:aws:s3:::${bucketName}`
-              ]
-            },
-            {
-              "Effect": "Allow",
-              "Action": [
-                "s3:GetObject",
-                "s3:List*"
-              ],
-              "Resource": [
+                `arn:aws:s3:::${bucketName}`,
                 `arn:aws:s3:::${bucketName}/*`
               ]
             }
@@ -125,7 +131,7 @@ export class QuicksightExampleStack extends cdk.Stack {
     );
   }
 
-  createDataSourceS3Type(idDataSource: string, nameSource: string, bucketName: string, manifestKey: string): CfnDataSource {
+  createDataSourceS3Type(idDataSource: string, nameSource: string, bucketName: string, manifestKey: string, data_source_permissions: CfnTemplate.ResourcePermissionProperty[]): CfnDataSource {
     return new CfnDataSource(
       this,
       idDataSource,
@@ -144,12 +150,13 @@ export class QuicksightExampleStack extends cdk.Stack {
         type: 'S3',
         sslProperties: {
           disableSsl: false
-        }
+        },
+        permissions: data_source_permissions
       }
     )
   }
 
-  createDataset(idDataset: string, datasetName: string, importMode: string, physical_table: Record<string, CfnDataSet.PhysicalTableProperty>): CfnDataSet {
+  createDataset(idDataset: string, datasetName: string, importMode: string, physical_table: Record<string, CfnDataSet.PhysicalTableProperty>, datasetPermissions: CfnTemplate.ResourcePermissionProperty[]): CfnDataSet {
     return new CfnDataSet(
       this,
       idDataset,
@@ -158,6 +165,7 @@ export class QuicksightExampleStack extends cdk.Stack {
         physicalTableMap: physical_table,
         name: datasetName,
         dataSetId: datasetName,
+        permissions: datasetPermissions,
         importMode: importMode
       }
     );

@@ -1,0 +1,58 @@
+{
+  "DataSetConfigurations": [
+    {
+      "Placeholder": "InternalDefinition",
+      "DataSetSchema": {
+        "ColumnSchemaList": [
+          {
+            "Name": "timestamps",
+            "DataType": "DECIMAL"
+          },
+          {
+            "Name": "InternalEpoch",
+            "DataType": "DECIMAL"
+          }
+        ]
+      }
+    }
+  ],
+  "Sheets": [
+    {
+      "SheetId": "12345678-50ad-4f3a-9023-8546cabd5357",
+      "Name": "Sheet 1",
+      "Visuals": [
+        {
+          "EmptyVisual": {
+            "VisualId": "12345678-3bf5-42f4-b2e6-9abd96d31a94",
+            "DataSetIdentifier": "s3-internal-telemetry",
+            "Actions": []
+          }
+        }
+      ],
+      "Layouts": [
+        {
+          "Configuration": {
+            "GridLayout": {
+              "Elements": [
+                {
+                  "ElementId": "12345678-3bf5-42f4-b2e6-9abd96d31a94",
+                  "ElementType": "VISUAL",
+                  "ColumnSpan": 18,
+                  "RowSpan": 12
+                }
+              ],
+              "CanvasSizeOptions": {
+                "ScreenCanvasSizeOptions": {
+                  "ResizeOption": "FIXED",
+                  "OptimizedViewPortWidth": "1600px"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "ContentType": "INTERACTIVE"
+    }
+  ]
+
+}
